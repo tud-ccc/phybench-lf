@@ -1,0 +1,87 @@
+target Cpp;
+
+reactor user_tasks(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "uplink_parameters.h"
+    =}
+
+    input args : int;
+    input new_user : userS;
+
+    state tid: int;
+    state symbolData: symbol_data;
+    state nmb_slot: int(0);
+
+    logical action next_slot: userS;
+
+    output[16] new_task: task;
+
+    reaction(args) {=
+        tid = (*args.get());
+    =}
+
+    reaction(new_user, next_slot) -> new_task, next_slot {=
+        userS user;
+        if (new_user.is_present()) {
+            user = (*new_user.get());
+        }
+        else if (next_slot.is_present()) {
+            user = (*next_slot.get());
+        }
+
+        int startSc = user.startRB*SC_PER_RB;
+        int nmbSc = user.nmbRB*SC_PER_RB;
+        //int nmbLayer    = user.nmbLayer;
+        int layer, rx, slot, i;
+
+        task tasks[(OFDM_IN_SLOT-1)*MAX_LAYERS];
+
+        /* All tasks have the same symbolData and computed so we update the
+        first with necessary data */
+        slot = nmb_slot;
+        symbolData.startSc = startSc;
+        symbolData.nmbSc   = nmbSc;
+        symbolData.data    = user.data;
+        symbolData.slot = slot;
+
+        /* Process each layer separately
+        Assume we can access the 4th ofdm symbol (containing reference symbols)
+        Prepare chest items to be put on queue
+        Reduces the amount of time in the critical section */
+        i = 0;
+        for (layer=0; layer<user.nmbLayer; layer++) {
+            for (rx=0; rx<RX_ANT; rx++) {
+                tasks[i].symbolData = &symbolData;
+                tasks[i].layer = layer;
+                tasks[i].rx = rx;
+
+                tasks[i].nmbLayer = user.nmbLayer; // added by JR
+                tasks[i].nmbRB = user.nmbRB; // added by JR
+                tasks[i].mod = user.mod; // added by JR
+                tasks[i].subframe = user.subframe; // added by JR
+
+                // interleave tasks;
+                new_task[i % new_task.size()].set(tasks[i]);
+                i++;
+            }
+        }
+
+        nmb_slot++;
+        if (nmb_slot == 2){
+            nmb_slot = 0;
+        }
+        else{
+            next_slot.schedule(user);
+        }
+    =}
+
+    deadline(deadline_time) {=
+
+    =}
+
+}

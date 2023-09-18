@@ -1,0 +1,32 @@
+target Cpp;
+
+reactor compute_turbo(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "turbo_dec_12.h"
+    =}
+
+    input turbo_task: task;
+    output task_computed: task;
+
+    reaction(turbo_task) -> task_computed {=
+        task taskp = (*turbo_task.get());
+
+        int nmbLayer = taskp.nmbLayer;
+        int nmbSc = taskp.nmbRB*SC_PER_RB;
+        int nmbSymbols = 2*nmbSc*(OFDM_IN_SLOT-1)*nmbLayer; /* 2* is for two slots in a subframe */
+        int nmbSoftbits = nmbSymbols * taskp.mod;
+
+        /* call the turbo decoder and then check CRC */
+        turbo_dec(nmbSoftbits);
+        task_computed.set(taskp);
+    =}
+    deadline(deadline_time) {=
+
+    =}
+
+}

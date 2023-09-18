@@ -1,0 +1,28 @@
+target Cpp
+{
+    //compiler: gcc,
+    cmake-include: phybench.cmake,
+    //build-type: debug
+}
+
+import trace_manager from "traces.lf"
+import uplink_user from "uplink_user.lf"
+
+main reactor (
+    trace_file:std::string("utils/traces.csv")
+) {
+
+    reaction(startup) {=
+        std::cout << "tracefile name= " << trace_file << "\n";
+    =}
+
+    // TODO: num_parallel_users has to be equal to TASK_THREADS defined in def.h
+    trace_generator = new trace_manager(
+        num_user_threads = 10,
+        tracefile = trace_file
+    );
+    user_threads = new[10] uplink_user();
+
+    trace_generator.targs -> user_threads.targs;
+    trace_generator.send_user -> user_threads.new_user;
+}

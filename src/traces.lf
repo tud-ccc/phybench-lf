@@ -1,0 +1,125 @@
+target Cpp;
+
+reactor trace_manager(
+    num_user_threads:int(10),
+    subframe_time:time(1 msec),
+    tracefile:std::string("utils/low.csv")
+) {
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "uplink_parameters.h"
+        #include "uplink.h"
+        #include "crc_13.h"
+    =}
+
+    private preamble {=
+        static int subframe;
+        static input_data data[NMB_DATA_FRAMES]; /* Input data */
+
+        /* Global parameter: queues */
+        static user_queue queue;
+
+        /* User info */
+        parameter_model pmodel;
+        current_line cline;
+        FILE* trc;
+        const char *traceFileName = "utils/traces.csv";
+    =}
+
+    output[num_user_threads] targs: int;
+    output[num_user_threads] send_user: userS;
+
+    state sf_interval:time(subframe_time);
+    state init_time:time(1 sec);
+    state one_second:time(1 sec);
+    state end_time: time;
+
+    state userq_empty : int(0);
+    state userq_count : int(0);
+
+    logical action new_subframe;
+    logical action send_users_to_threads;
+
+    reaction(startup) -> targs, new_subframe {=
+        int i  = 0;
+
+        /* Generate input data */
+        init_trace_file(tracefile.c_str(), &cline, &trc);
+        init_data(data);
+        crcInit();
+        init_parameter_model(&pmodel, &subframe);
+
+        /* Make sure the queue is empty */
+        queue.first = NULL;
+        queue.last = NULL;
+
+        for(int i = 0; i < num_user_threads; i++) {
+            /* Start thread */
+            targs[i].set(i);
+        }
+
+        auto physical_time = get_elapsed_physical_time();
+        std::cout << "startup time: " << physical_time << std::endl;
+        init_time = physical_time;
+
+        // TODO: should not wait 1ms for the first iteration
+        new_subframe.schedule(init_time); // subframe_time
+    =}
+
+    reaction(new_subframe) -> new_subframe, send_users_to_threads {=
+        user_parameters *parameters =  uplink_parameters(&pmodel, data, &subframe, &cline, &trc);
+
+        // interleave users based on num_users
+        if (parameters) {
+            if (parameters->first->nmbRB > 0) {
+                if (queue.first == NULL) {
+                    /* Queue is empty so add new users to the beginning of the queue */
+                    queue.first = parameters->first;
+                    userq_empty = 1;
+                }
+                else {
+                    /* Queue is not empty so add new users to the end of the queue */
+                    queue.last->next = parameters->first;
+                }
+
+                /* Set the end of the queue to the last of the added users */
+                queue.last = parameters->last;
+
+                /* process users and schedule next subframe*/
+                send_users_to_threads.schedule();
+            }
+            else{
+			    free(parameters->first);
+		    }
+            new_subframe.schedule(subframe_time);
+        }
+    =}
+
+    reaction(send_users_to_threads) -> send_user, send_users_to_threads {=
+        /* handle_user */
+        int num_users = 0;
+        for(int i=0; i<10; i++){
+            if (queue.first) {
+                userS *user = NULL;
+
+                /* deq_user_q */
+                user = queue.first;
+                queue.first = user->next;
+
+                // interleave users;
+                send_user[num_users % num_user_threads].set(*user);
+                num_users++;
+            }
+        }
+        if (queue.first) {
+            send_users_to_threads.schedule();
+        }
+    =}
+
+    reaction(shutdown) {=
+        end_time = get_elapsed_physical_time();
+        std::cout << "\neffective time: " << (end_time - init_time) << std::endl;
+        std::cout << "total time: " << end_time << " nsec" << std::endl;
+    =}
+}

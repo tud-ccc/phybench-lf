@@ -1,0 +1,60 @@
+target Cpp;
+
+reactor compute_interleave(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "interleave_11.h"
+    =}
+
+    input[24] interleave_task: task;
+    input ver_file: FILE*;
+    output task_computed: task;
+
+    state slot_counter: int(0);
+    state numFinished: int(0);
+    state maxLayers: int(4);
+
+    reaction(interleave_task) -> task_computed {=
+        task taskp;
+
+        if (interleave_task[0].is_present()){
+            taskp = (*interleave_task[0].get());
+            maxLayers = taskp.nmbLayer;
+        }
+
+        for (int i=0; i< (OFDM_IN_SLOT - 1) * maxLayers; i++){
+            if (interleave_task[i].is_present()) {
+                numFinished++;
+            }
+        }
+
+        if(numFinished == maxLayers * (OFDM_IN_SLOT - 1)) {
+
+            slot_counter++;
+            if (slot_counter == 2){
+                /* OK, we have processed data for one user in 2 slots, let's process
+                it as one big chunk. In real, we should divide the data into
+                code block, but in this example we process all data in one
+                block. */
+                symbol_data *symbolData = taskp.symbolData;
+                int nmbSc = taskp.nmbRB*SC_PER_RB;
+                int nmbSymbols = 2*nmbSc*(OFDM_IN_SLOT-1)*maxLayers; /* 2* is for two slots in a subframe */
+
+                interleave(symbolData->symbols, symbolData->deint_symbols, nmbSymbols);
+
+                slot_counter = 0;
+                taskp.nmbLayer = maxLayers;
+                task_computed.set(taskp);
+            }
+            numFinished = 0;
+        }
+    =}
+    deadline(deadline_time) {=
+
+    =}
+
+}

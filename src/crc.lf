@@ -1,0 +1,37 @@
+target Cpp;
+
+reactor compute_crc(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "crc_13.h"
+    =}
+
+    input crc_task: task;
+    state success_deadlines: int(0);
+
+    reaction(crc_task) /*-> task_computed*/ {=
+        task taskp = (*crc_task.get());
+        symbol_data *symbolData = taskp.symbolData;
+
+        int nmbLayer = taskp.nmbLayer;
+        int nmbSc = taskp.nmbRB*SC_PER_RB;
+        int nmbSymbols = 2*nmbSc*(OFDM_IN_SLOT-1)*nmbLayer; /* 2* is for two slots in a subframe */
+        int nmbSoftbits = nmbSymbols * taskp.mod;
+
+        crcFast(symbolData->bits, nmbSoftbits/24);
+
+        success_deadlines++;
+    =}
+
+    deadline(deadline_time) {=
+
+    =}
+
+    reaction(shutdown) {=
+        //printf("num_missed_deadlines: %d\n", success_deadlines);
+    =}
+}

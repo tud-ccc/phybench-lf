@@ -1,0 +1,45 @@
+target Cpp;
+
+import user_tasks from "uplink_tasks.lf";
+import compute_chest from "channel_estimation.lf";
+import compute_combw from "comb_weights.lf";
+import compute_symbol from "symbol.lf";
+import compute_interleave from "interleave.lf";
+import compute_demap from "soft_demap.lf";
+import compute_turbo from "turbo_dec.lf";
+import compute_crc from "crc.lf";
+
+public preamble {=
+    #include <stdlib.h>
+    #include <stdio.h>
+    #include "kernel_def.h"
+    #include "uplink.h"
+    #include "uplink_parameters.h"
+
+=}
+
+reactor uplink_user(dl:time(2500 usec)) {
+
+    input targs: int;
+    input new_user: userS;
+
+    utasks = new user_tasks(deadline_time = dl);
+    chest = new[16] compute_chest(deadline_time = dl);
+    combw = new compute_combw(deadline_time = dl);
+    symbol = new[24] compute_symbol(deadline_time = dl);
+    interl = new compute_interleave(deadline_time = dl);
+    demap = new compute_demap(deadline_time = dl);
+    turbo = new compute_turbo(deadline_time = dl);
+    crc = new compute_crc(deadline_time = dl);
+
+    targs -> utasks.args;
+    new_user -> utasks.new_user;
+
+    utasks.new_task -> chest.chest_task;
+    chest.task_computed -> combw.combw_task;
+    combw.task_computed -> symbol.symbol_task;
+    symbol.task_computed -> interl.interleave_task;
+    interl.task_computed -> demap.demap_task;
+    demap.task_computed -> turbo.turbo_task;
+    turbo.task_computed -> crc.crc_task;
+}

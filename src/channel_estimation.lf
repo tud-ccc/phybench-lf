@@ -1,0 +1,38 @@
+target Cpp;
+
+reactor compute_chest(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "uplink.h"
+        #include "chest_5.h"
+        #include "mf_4.h"
+        #include "fft_8.h"
+    =}
+
+    input chest_task: task;
+    output task_computed: task;
+
+    reaction(chest_task) -> task_computed {=
+        task taskp = (*chest_task.get());
+
+        symbol_data *symbolData = taskp.symbolData;
+        int rx = taskp.rx;
+        int layer = taskp.layer;
+        int res_power[4] = {0, 0, 0, 0};
+
+        mf(&symbolData->data->in_data[symbolData->slot][3][rx][symbolData->startSc], &symbolData->data->in_rs[symbolData->slot][symbolData->startSc][layer], symbolData->nmbSc, symbolData->layer_data[layer][rx], &symbolData->pow[rx]);
+        ifft(symbolData->layer_data[layer][rx], symbolData->nmbSc, symbolData->data->fftw[symbolData->slot]);
+        chest(symbolData->layer_data[layer][rx], symbolData->pow[rx], symbolData->nmbSc, symbolData->layer_data[layer][rx], &res_power[rx]);
+        /* Put power values in the R matrix */
+        symbolData->R[layer][rx] = cmake(res_power[rx],0);
+        fft(symbolData->layer_data[layer][rx], symbolData->nmbSc, symbolData->data->fftw[symbolData->slot]);
+
+        task_computed.set(taskp);
+    =}
+    deadline(deadline_time) {=
+
+    =}
+
+}

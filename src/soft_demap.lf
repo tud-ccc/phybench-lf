@@ -1,0 +1,37 @@
+target Cpp;
+
+reactor compute_demap(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "soft_demap_9.h"
+    =}
+
+    input demap_task: task;
+    input ver_file: FILE*;
+    output task_computed: task;
+
+    reaction(demap_task) -> task_computed {=
+        if (demap_task.is_present()){
+        task taskp = (*demap_task.get());
+
+        symbol_data *symbolData = taskp.symbolData;
+
+        int nmbLayer = taskp.nmbLayer;
+        int nmbSc = taskp.nmbRB*SC_PER_RB;
+        int nmbSymbols = 2*nmbSc*(OFDM_IN_SLOT-1)*nmbLayer; /* 2* is for two slots in a subframe */
+        int nmbSoftbits = nmbSymbols * taskp.mod;
+
+        soft_demap(symbolData->deint_symbols, symbolData->pow[0], taskp.mod, nmbSymbols, symbolData->softbits);
+
+        task_computed.set(taskp);
+        }
+    =}
+    deadline(deadline_time) {=
+
+    =}
+
+}

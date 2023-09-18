@@ -1,0 +1,46 @@
+target Cpp;
+
+reactor compute_symbol(deadline_time:time(5 msec)) {
+
+    public preamble {=
+        #include <stdlib.h>
+        #include <stdio.h>
+        #include "kernel_def.h"
+        #include "uplink.h"
+        #include "uplink_parameters.h"
+        #include "ant_comb_7.h"
+        #include "fft_8.h"
+    =}
+
+    input symbol_task : task;
+    output task_computed: task;
+
+    reaction(symbol_task) -> task_computed {=
+        task taskp = (*symbol_task.get());
+        symbol_data *symbolData = taskp.symbolData;
+
+        int ofdm = taskp.ofdm;
+        int ofdm_count = taskp.ofdm_count;
+        int layer = taskp.layer;
+        int nmbSc = symbolData->nmbSc;
+        int slot = symbolData->slot;
+        complex* in[4];
+        int index_out;
+
+        in[0] = &symbolData->data->in_data[symbolData->slot][ofdm][0][symbolData->startSc];
+        in[1] = &symbolData->data->in_data[symbolData->slot][ofdm][1][symbolData->startSc];
+        in[2] = &symbolData->data->in_data[symbolData->slot][ofdm][2][symbolData->startSc];
+        in[3] = &symbolData->data->in_data[symbolData->slot][ofdm][3][symbolData->startSc];
+        /* Put all demodulated symbols in one long vector */
+        index_out = nmbSc*ofdm_count + slot*(OFDM_IN_SLOT-1)*nmbSc + layer*2*(OFDM_IN_SLOT-1)*nmbSc;
+        ant_comb(in, symbolData->combWeight[layer], nmbSc, &symbolData->symbols[index_out]);
+        /* Now transform data back to time plane */
+        ifft(&symbolData->symbols[index_out], nmbSc, symbolData->data->fftw[symbolData->slot]);
+
+        task_computed.set(taskp);
+    =}
+    deadline(deadline_time) {=
+
+    =}
+
+}
